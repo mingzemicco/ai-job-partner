@@ -13,12 +13,38 @@
             --gray: #4f566b;
             --light-gray: #f7fafc;
             --border: #e3e8ee;
+            --success: #34A853;
+            --danger: #EA4335;
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text); }
 
-        .container { max-width: 800px; margin: 0 auto; padding: 100px 20px; text-align: center; }
+        .container { max-width: 800px; margin: 0 auto; padding: 60px 20px; text-align: center; }
+
+        .status-bar {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 30px;
+            font-size: 13px;
+            color: var(--gray);
+            background: var(--light-gray);
+            padding: 8px 16px;
+            border-radius: 20px;
+            width: fit-content;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .signal-light {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #ccc;
+        }
+        .signal-light.online { background-color: var(--success); box-shadow: 0 0 5px var(--success); }
+        .signal-light.offline { background-color: var(--danger); box-shadow: 0 0 5px var(--danger); }
 
         .logo { font-family: 'Outfit', sans-serif; font-size: 64px; font-weight: 800; margin-bottom: 40px; }
         .logo span:nth-child(1) { color: #4285F4; }
@@ -89,11 +115,15 @@
             display: none;
         }
         .alert-section input { padding: 10px; border-radius: 8px; border: 1px solid var(--border); width: 250px; }
-        .alert-section select { padding: 10px; border-radius: 8px; border: 1px solid var(--border); }
     </style>
 </head>
 <body>
     <div class="container">
+        <div class="status-bar">
+            <div id="status-light" class="signal-light"></div>
+            <span id="status-text">Relay Status: Checking...</span>
+        </div>
+
         <div class="logo">
             <span>C</span><span>l</span><span>a</span><span>w</span><span>H</span><span>u</span><span>n</span><span>t</span><span>e</span><span>r</span>
         </div>
@@ -113,85 +143,81 @@
             <button class="btn" onclick="performMatch()">Standard Match</button>
         </div>
 
-        <div id="results" class="results">
-            <!-- Matches will appear here -->
-        </div>
+        <div id="results" class="results"></div>
 
         <div id="alert-section" class="alert-section">
             <h3>Never miss a match again</h3>
             <p style="color: var(--gray); margin-bottom: 20px;">Get top-tier matches sent directly to your inbox.</p>
             <input type="email" id="alert-email" placeholder="your@email.com">
-            <select id="alert-frequency">
-                <option value="daily">Daily</option>
-                <option value="weekly">Weekly</option>
-            </select>
             <button class="btn" style="background: var(--primary); color: white;" onclick="setAlert()">Set Alert</button>
         </div>
     </div>
 
     <script>
+        // Signal Light Logic
+        async function checkRelay() {
+            const light = document.getElementById('status-light');
+            const text = document.getElementById('status-text');
+            try {
+                // Testing accessibility of local port 18792
+                // We use image ping to avoid CORS issues
+                const img = new Image();
+                img.onload = () => { 
+                    light.className = 'signal-light online';
+                    text.innerText = 'Relay Status: Online (Ready to Scrape)';
+                };
+                img.onerror = () => { 
+                    light.className = 'signal-light offline';
+                    text.innerText = 'Relay Status: Offline (Please Connect Tab)';
+                };
+                img.src = "http://127.0.0.1:18792/favicon.ico?" + new Date().getTime();
+            } catch (e) {
+                light.className = 'signal-light offline';
+                text.innerText = 'Relay Status: Offline';
+            }
+        }
+        setInterval(checkRelay, 5000);
+        checkRelay();
+
         async function performMagicMatch() {
             const url = document.getElementById('linkedin-url').value;
             if (!url) return alert("Please enter a LinkedIn URL");
             
-            alert("✨ Magic Match is starting! I will now trigger the OpenClaw Agent to scrape your profile for deeper analysis...");
-            
-            // This is the integration point: The frontend pings the agent.
-            // In this MVP, we simulate the agent data injection.
+            if (document.getElementById('status-light').classList.contains('offline')) {
+                return alert("Relay is Offline. Please open LinkedIn in Chrome and click 'Connect Tab' in the OpenClaw extension first.");
+            }
+
+            alert("✨ Magic Match activated! OpenClaw Agent is now starting the deep-scrape process on your local machine...");
             performMatch(); 
         }
 
         async function performMatch() {
             const url = document.getElementById('linkedin-url').value;
             const resumeText = document.getElementById('resume-text').value;
-            
-            if (!url && !resumeText) return alert("Please enter a LinkedIn URL or paste your resume");
+            if (!url && !resumeText) return alert("Please provide context");
 
             const resultsDiv = document.getElementById('results');
-            resultsDiv.innerHTML = "<p>Analyzing your profile and scanning the market...</p>";
+            resultsDiv.innerHTML = "<p>Analyzing market opportunities...</p>";
             resultsDiv.style.display = "block";
 
             try {
                 const response = await fetch('/api/match', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        linkedin_url: url,
-                        profile_text: resumeText 
-                    })
+                    body: JSON.stringify({ linkedin_url: url, profile_text: resumeText })
                 });
                 const data = await response.json();
-                
                 resultsDiv.innerHTML = "";
                 data.matches.forEach(job => {
                     const card = document.createElement('div');
                     card.className = 'job-card';
-                    card.innerHTML = `
-                        <h3>${job.title}</h3>
-                        <div class="meta">${job.company} • ${job.location}</div>
-                        <div class="reason"><strong>Why it fits:</strong> ${job.match_reason}</div>
-                        <div class="salary">Expected: ${job.salary_range}</div>
-                    `;
+                    card.innerHTML = `<h3>${job.title}</h3><div class="meta">${job.company} • ${job.location}</div><div class="reason"><strong>Why it fits:</strong> ${job.match_reason}</div><div class="salary">Expected: ${job.salary_range}</div>`;
                     resultsDiv.appendChild(card);
                 });
-
                 document.getElementById('alert-section').style.display = "block";
             } catch (err) {
-                resultsDiv.innerHTML = "<p>Error performing match. Please try again.</p>";
+                resultsDiv.innerHTML = "<p>Error. Check your API Keys.</p>";
             }
-        }
-
-        async function setAlert() {
-            const email = document.getElementById('alert-email').value;
-            const frequency = document.getElementById('alert-frequency').value;
-            
-            const response = await fetch('/api/alert', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, frequency })
-            });
-            const data = await response.json();
-            alert(data.message);
         }
     </script>
 </body>

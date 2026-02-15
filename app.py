@@ -16,7 +16,7 @@ def get_mock_matches(linkedin_url, error_msg=None):
             "company": "Amundi",
             "location": "Paris, France",
             "salary_range": "€120k - €180k",
-            "match_reason": "Your background in high-level finance aligns with Amundi's core strategies."
+            "match_reason": "Based on your high-level financial background."
         },
         {
             "id": str(uuid.uuid4()),
@@ -28,61 +28,62 @@ def get_mock_matches(linkedin_url, error_msg=None):
         }
     ]
     if error_msg:
-        # Prepend a notice about the API error
         matches.insert(0, {
             "id": "error",
             "title": "Note: Using Demo Mode",
             "company": "System",
             "location": "N/A",
             "salary_range": "N/A",
-            "match_reason": f"AI models are currently unavailable (Error: {error_msg}). Showing high-quality demo matches instead."
+            "match_reason": f"AI Engine (Minimax M2.5) returned: {error_msg}. Showing demo data."
         })
     return matches
 
+# AI Matching Logic focused on Minimax M2.5
 def match_jobs(linkedin_url, profile_data=None):
-    gemini_key = os.environ.get("GEMINI_API_KEY")
     minimax_key = os.environ.get("MINIMAX_API_KEY")
+    # For older accounts, GroupId might be required
+    group_id = os.environ.get("MINIMAX_GROUP_ID") 
     
     context = f"LinkedIn URL: {linkedin_url}"
     if profile_data:
         context = f"Name: {profile_data.get('name')}\nHeadline: {profile_data.get('headline')}\nExp: {json.dumps(profile_data.get('experience', [])[:2])}"
 
-    prompt = f"Context: {context}\nTask: Find 3 high-impact jobs in Paris. Return ONLY a JSON object with a 'matches' list."
+    prompt = f"Context: {context}\nTask: Find 3 high-impact job opportunities in Paris. Return ONLY a JSON object with a 'matches' list containing objects with: title, company, location, salary_range, match_reason."
 
-    # 1. Try Gemini 2.0 Flash
-    if gemini_key:
-        try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}"
-            payload = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"response_mime_type": "application/json"}}
-            resp = requests.post(url, json=payload, timeout=10)
-            res_json = resp.json()
-            if resp.status_code == 200 and 'candidates' in res_json:
-                content = res_json['candidates'][0]['content']['parts'][0]['text']
-                matches = json.loads(content).get('matches', [])
-                for m in matches: m['id'] = str(uuid.uuid4())
-                return matches
-            print(f"Gemini Fail ({resp.status_code}): {res_json}")
-        except Exception as e:
-            print(f"Gemini Exception: {e}")
-
-    # 2. Try Minimax Fallback
     if minimax_key:
         try:
+            # Minimax V2 API Endpoint
             url = "https://api.minimax.chat/v1/text/chatcompletion_v2"
-            headers = {"Authorization": f"Bearer {minimax_key}", "Content-Type": "application/json"}
-            payload = {"model": "abab6.5s-chat", "messages": [{"role": "user", "content": prompt}]}
-            resp = requests.post(url, headers=headers, json=payload, timeout=10)
+            headers = {
+                "Authorization": f"Bearer {minimax_key}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": "abab6.5s-chat", # Minimax M2.5
+                "messages": [{"role": "user", "content": prompt}],
+                "response_format": {"type": "json_object"}
+            }
+            
+            resp = requests.post(url, headers=headers, json=payload, timeout=20)
             res_json = resp.json()
+            
             if resp.status_code == 200 and 'choices' in res_json:
-                content = res_json['choices'][0]['message']['content'].replace('```json', '').replace('```', '').strip()
+                content = res_json['choices'][0]['message']['content']
+                # Sometimes models wrap JSON in markdown
+                content = content.replace('```json', '').replace('```', '').strip()
                 matches = json.loads(content).get('matches', [])
                 for m in matches: m['id'] = str(uuid.uuid4())
                 return matches
-            print(f"Minimax Fail ({resp.status_code}): {res_json}")
+            else:
+                error_info = res_json.get('base_resp', {}).get('status_msg', 'Unknown Error')
+                print(f"Minimax Error: {resp.status_code} - {error_info}")
+                return get_mock_matches(linkedin_url, f"{resp.status_code}: {error_info}")
+                
         except Exception as e:
             print(f"Minimax Exception: {e}")
+            return get_mock_matches(linkedin_url, str(e))
 
-    return get_mock_matches(linkedin_url, "Quota exceeded or API error")
+    return get_mock_matches(linkedin_url, "API Key Missing")
 
 @app.route('/')
 def index():
@@ -99,4 +100,5 @@ def save_alert():
     return jsonify({"status": "success"})
 
 if __name__ == '__main__':
-    app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
+    port = int(os.environ.get('PORT', 8080))
+    app.run(debug=False, host='0.0.0.0', port=port)

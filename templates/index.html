@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ClawHunter - Your Agentic Career Partner</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #635bff;
+            --bg: #ffffff;
+            --text: #1a1f36;
+            --gray: #4f566b;
+            --light-gray: #f7fafc;
+            --border: #e3e8ee;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', sans-serif; background-color: var(--bg); color: var(--text); }
+
+        .container { max-width: 800px; margin: 0 auto; padding: 100px 20px; text-align: center; }
+
+        .logo { font-family: 'Outfit', sans-serif; font-size: 64px; font-weight: 800; margin-bottom: 40px; }
+        .logo span:nth-child(1) { color: #4285F4; }
+        .logo span:nth-child(2) { color: #EA4335; }
+        .logo span:nth-child(3) { color: #FBBC05; }
+        .logo span:nth-child(4) { color: #4285F4; }
+        .logo span:nth-child(5) { color: #34A853; }
+        .logo span:nth-child(6) { color: #EA4335; }
+
+        .search-box {
+            position: relative;
+            max-width: 584px;
+            margin: 0 auto;
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            transition: box-shadow 0.2s;
+        }
+        .search-box:hover, .search-box:focus-within {
+            box-shadow: 0 1px 6px rgba(32,33,36,.28);
+            border-color: rgba(223,225,229,0);
+        }
+        .search-box input {
+            width: 100%;
+            border: none;
+            outline: none;
+            font-size: 16px;
+            padding-left: 10px;
+        }
+
+        .buttons { margin-top: 30px; }
+        .btn {
+            background-color: #f8f9fa;
+            border: 1px solid #f8f9fa;
+            border-radius: 4px;
+            color: #3c4043;
+            font-size: 14px;
+            margin: 11px 4px;
+            padding: 0 16px;
+            line-height: 27px;
+            height: 36px;
+            min-width: 54px;
+            text-align: center;
+            cursor: pointer;
+            user-select: none;
+        }
+        .btn:hover { border: 1px solid #dadce0; box-shadow: 0 1px 1px rgba(0,0,0,.1); color: #202124; }
+
+        .results { margin-top: 50px; text-align: left; display: none; }
+        .job-card {
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            background-color: var(--light-gray);
+        }
+        .job-card h3 { color: var(--primary); margin-bottom: 8px; }
+        .job-card .meta { font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--gray); }
+        .job-card .reason { font-size: 14px; line-height: 1.6; }
+        .job-card .salary { margin-top: 12px; font-weight: 700; color: #34A853; }
+
+        .alert-section {
+            margin-top: 40px;
+            padding: 30px;
+            border-top: 1px solid var(--border);
+            display: none;
+        }
+        .alert-section input { padding: 10px; border-radius: 8px; border: 1px solid var(--border); width: 250px; }
+        .alert-section select { padding: 10px; border-radius: 8px; border: 1px solid var(--border); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">
+            <span>C</span><span>l</span><span>a</span><span>w</span><span>H</span><span>u</span><span>n</span><span>t</span><span>e</span><span>r</span>
+        </div>
+        
+        <div class="search-box">
+            <svg focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"></path></svg>
+            <input type="text" id="linkedin-url" placeholder="Enter your LinkedIn profile URL (e.g., linkedin.com/in/name)">
+        </div>
+
+        <div class="buttons">
+            <button class="btn" onclick="performMatch()">Match My Career</button>
+            <button class="btn">I'm Feeling Lucky</button>
+        </div>
+
+        <div id="results" class="results">
+            <!-- Matches will appear here -->
+        </div>
+
+        <div id="alert-section" class="alert-section">
+            <h3>Never miss a match again</h3>
+            <p style="color: var(--gray); margin-bottom: 20px;">Get top-tier matches sent directly to your inbox.</p>
+            <input type="email" id="alert-email" placeholder="your@email.com">
+            <select id="alert-frequency">
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+            </select>
+            <button class="btn" style="background: var(--primary); color: white;" onclick="setAlert()">Set Alert</button>
+        </div>
+    </div>
+
+    <script>
+        async function performMatch() {
+            const url = document.getElementById('linkedin-url').value;
+            if (!url) return alert("Please enter a LinkedIn URL");
+
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = "<p>Analyzing your profile and scanning the market...</p>";
+            resultsDiv.style.display = "block";
+
+            try {
+                const response = await fetch('/api/match', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ linkedin_url: url })
+                });
+                const data = await response.json();
+                
+                resultsDiv.innerHTML = "";
+                data.matches.forEach(job => {
+                    const card = document.createElement('div');
+                    card.className = 'job-card';
+                    card.innerHTML = `
+                        <h3>${job.title}</h3>
+                        <div class="meta">${job.company} • ${job.location}</div>
+                        <div class="reason"><strong>Why it fits:</strong> ${job.match_reason}</div>
+                        <div class="salary">Expected: ${job.salary_range}</div>
+                    `;
+                    resultsDiv.appendChild(card);
+                });
+
+                document.getElementById('alert-section').style.display = "block";
+            } catch (err) {
+                resultsDiv.innerHTML = "<p>Error performing match. Please try again.</p>";
+            }
+        }
+
+        async function setAlert() {
+            const email = document.getElementById('alert-email').value;
+            const frequency = document.getElementById('alert-frequency').value;
+            
+            const response = await fetch('/api/alert', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, frequency })
+            });
+            const data = await response.json();
+            alert(data.message);
+        }
+    </script>
+</body>
+</html>

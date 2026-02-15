@@ -34,56 +34,80 @@ def get_mock_matches(linkedin_url, error_msg=None):
             "company": "System",
             "location": "N/A",
             "salary_range": "N/A",
-            "match_reason": f"AI Engine (Minimax M2.5) returned: {error_msg}. Showing demo data."
+            "match_reason": f"AI models are currently restricted or unavailable (Error: {error_msg}). Showing demo data."
         })
     return matches
 
-# AI Matching Logic focused on Minimax M2.5
+# Multi-Engine AI Matching Logic
 def match_jobs(linkedin_url, profile_data=None):
+    openai_key = os.environ.get("OPENAI_API_KEY")
+    gemini_key = os.environ.get("GEMINI_API_KEY")
     minimax_key = os.environ.get("MINIMAX_API_KEY")
-    # For older accounts, GroupId might be required
-    group_id = os.environ.get("MINIMAX_GROUP_ID") 
     
     context = f"LinkedIn URL: {linkedin_url}"
     if profile_data:
         context = f"Name: {profile_data.get('name')}\nHeadline: {profile_data.get('headline')}\nExp: {json.dumps(profile_data.get('experience', [])[:2])}"
 
-    prompt = f"Context: {context}\nTask: Find 3 high-impact job opportunities in Paris. Return ONLY a JSON object with a 'matches' list containing objects with: title, company, location, salary_range, match_reason."
+    prompt = f"Context: {context}\nTask: Find 3 high-impact jobs in Paris. Return ONLY a JSON object with a 'matches' list containing objects with: title, company, location, salary_range, match_reason."
 
-    if minimax_key:
+    # 1. Try OpenAI (GPT-4o) - Most Reliable
+    if openai_key:
         try:
-            # Minimax V2 API Endpoint
-            url = "https://api.minimax.chat/v1/text/chatcompletion_v2"
-            headers = {
-                "Authorization": f"Bearer {minimax_key}",
-                "Content-Type": "application/json"
-            }
+            url = "https://api.openai.com/v1/chat/completions"
+            headers = {"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"}
             payload = {
-                "model": "abab6.5s-chat", # Minimax M2.5
+                "model": "gpt-4o",
                 "messages": [{"role": "user", "content": prompt}],
                 "response_format": {"type": "json_object"}
             }
-            
-            resp = requests.post(url, headers=headers, json=payload, timeout=20)
-            res_json = resp.json()
-            
-            if resp.status_code == 200 and 'choices' in res_json:
-                content = res_json['choices'][0]['message']['content']
-                # Sometimes models wrap JSON in markdown
-                content = content.replace('```json', '').replace('```', '').strip()
+            resp = requests.post(url, headers=headers, json=payload, timeout=15)
+            if resp.status_code == 200:
+                content = resp.json()['choices'][0]['message']['content']
                 matches = json.loads(content).get('matches', [])
                 for m in matches: m['id'] = str(uuid.uuid4())
                 return matches
-            else:
-                error_info = res_json.get('base_resp', {}).get('status_msg', 'Unknown Error')
-                print(f"Minimax Error: {resp.status_code} - {error_info}")
-                return get_mock_matches(linkedin_url, f"{resp.status_code}: {error_info}")
-                
+            print(f"OpenAI Error: {resp.status_code} - {resp.text}")
+        except Exception as e:
+            print(f"OpenAI Exception: {e}")
+
+    # 2. Try Gemini 2.0 Flash
+    if gemini_key:
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}"
+            payload = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"response_mime_type": "application/json"}}
+            resp = requests.post(url, json=payload, timeout=10)
+            if resp.status_code == 200:
+                res_json = resp.json()
+                if 'candidates' in res_json:
+                    content = res_json['candidates'][0]['content']['parts'][0]['text']
+                    matches = json.loads(content).get('matches', [])
+                    for m in matches: m['id'] = str(uuid.uuid4())
+                    return matches
+            print(f"Gemini Error: {resp.status_code}")
+        except Exception as e:
+            print(f"Gemini Exception: {e}")
+
+    # 3. Try Minimax Fallback
+    if minimax_key:
+        try:
+            url = "https://api.minimax.chat/v1/text/chatcompletion_v2"
+            headers = {"Authorization": f"Bearer {minimax_key}", "Content-Type": "application/json"}
+            payload = {
+                "model": "abab6.5s-chat",
+                "messages": [{"role": "user", "content": prompt}],
+                "response_format": {"type": "json_object"}
+            }
+            resp = requests.post(url, headers=headers, json=payload, timeout=15)
+            if resp.status_code == 200:
+                content = resp.json()['choices'][0]['message']['content'].replace('```json', '').replace('```', '').strip()
+                matches = json.loads(content).get('matches', [])
+                for m in matches: m['id'] = str(uuid.uuid4())
+                return matches
+            print(f"Minimax Error: {resp.status_code}")
         except Exception as e:
             print(f"Minimax Exception: {e}")
-            return get_mock_matches(linkedin_url, str(e))
 
-    return get_mock_matches(linkedin_url, "API Key Missing")
+    return get_mock_matches(linkedin_url, "All AI engines failed or keys missing")
 
 @app.route('/')
 def index():

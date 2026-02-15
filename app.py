@@ -16,7 +16,7 @@ def get_mock_matches(linkedin_url, error_msg=None):
             "company": "Amundi",
             "location": "Paris, France",
             "salary_range": "€120k - €180k",
-            "match_reason": "Based on your high-level financial background."
+            "match_reason": "Your background in high-level finance aligns with Amundi's core strategies."
         },
         {
             "id": str(uuid.uuid4()),
@@ -34,25 +34,39 @@ def get_mock_matches(linkedin_url, error_msg=None):
             "company": "System",
             "location": "N/A",
             "salary_range": "N/A",
-            "match_reason": f"AI models are currently restricted or unavailable (Error: {error_msg}). Showing demo data."
+            "match_reason": f"AI Engine returned: {error_msg}. Showing demo data."
         })
     return matches
 
 # Multi-Engine AI Matching Logic
-def match_jobs(linkedin_url, profile_data=None):
+def match_jobs(linkedin_url, profile_data=None, profile_text=None):
     openai_key = os.environ.get("OPENAI_API_KEY")
     gemini_key = os.environ.get("GEMINI_API_KEY")
     minimax_key = os.environ.get("MINIMAX_API_KEY")
     
+    # 🔍 DEBUG: Build context
     context = f"LinkedIn URL: {linkedin_url}"
-    if profile_data:
-        context = f"Name: {profile_data.get('name')}\nHeadline: {profile_data.get('headline')}\nExp: {json.dumps(profile_data.get('experience', [])[:2])}"
+    if profile_data and isinstance(profile_data, dict):
+        context = f"Structured Profile Data: {json.dumps(profile_data)}"
+    elif profile_text:
+        context = f"Raw Resume Text: {profile_text}"
 
-    prompt = f"Context: {context}\nTask: Find 3 high-impact jobs in Paris. Return ONLY a JSON object with a 'matches' list containing objects with: title, company, location, salary_range, match_reason."
+    print(f"--- DEBUG: Context used for AI ---\n{context[:500]}...\n--- END DEBUG ---")
 
-    # 1. Try OpenAI (GPT-4o) - Most Reliable
+    prompt = f"""
+    Context: {context}
+    Task: This is a LinkedIn profile or resume. Identify 3 high-impact job opportunities in Paris.
+    If the person is in Real Estate/Investment, find roles in Real Estate funds or Proptech.
+    If the person is in Tech, find roles in Startups/Big Tech.
+    
+    Return ONLY a JSON object with a 'matches' list containing objects with: 
+    title, company, location, salary_range, match_reason.
+    """
+
+    # 1. Try OpenAI (GPT-4o)
     if openai_key:
         try:
+            print("Trying OpenAI GPT-4o...")
             url = "https://api.openai.com/v1/chat/completions"
             headers = {"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"}
             payload = {
@@ -60,9 +74,10 @@ def match_jobs(linkedin_url, profile_data=None):
                 "messages": [{"role": "user", "content": prompt}],
                 "response_format": {"type": "json_object"}
             }
-            resp = requests.post(url, headers=headers, json=payload, timeout=15)
+            resp = requests.post(url, headers=headers, json=payload, timeout=20)
             if resp.status_code == 200:
                 content = resp.json()['choices'][0]['message']['content']
+                print(f"OpenAI raw response: {content[:200]}")
                 matches = json.loads(content).get('matches', [])
                 for m in matches: m['id'] = str(uuid.uuid4())
                 return matches
@@ -73,16 +88,16 @@ def match_jobs(linkedin_url, profile_data=None):
     # 2. Try Gemini 2.0 Flash
     if gemini_key:
         try:
+            print("Trying Gemini 2.0...")
             url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}"
             payload = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"response_mime_type": "application/json"}}
-            resp = requests.post(url, json=payload, timeout=10)
+            resp = requests.post(url, json=payload, timeout=15)
             if resp.status_code == 200:
                 res_json = resp.json()
-                if 'candidates' in res_json:
-                    content = res_json['candidates'][0]['content']['parts'][0]['text']
-                    matches = json.loads(content).get('matches', [])
-                    for m in matches: m['id'] = str(uuid.uuid4())
-                    return matches
+                content = res_json['candidates'][0]['content']['parts'][0]['text']
+                matches = json.loads(content).get('matches', [])
+                for m in matches: m['id'] = str(uuid.uuid4())
+                return matches
             print(f"Gemini Error: {resp.status_code}")
         except Exception as e:
             print(f"Gemini Exception: {e}")
@@ -90,14 +105,11 @@ def match_jobs(linkedin_url, profile_data=None):
     # 3. Try Minimax Fallback
     if minimax_key:
         try:
+            print("Trying Minimax...")
             url = "https://api.minimax.chat/v1/text/chatcompletion_v2"
             headers = {"Authorization": f"Bearer {minimax_key}", "Content-Type": "application/json"}
-            payload = {
-                "model": "abab6.5s-chat",
-                "messages": [{"role": "user", "content": prompt}],
-                "response_format": {"type": "json_object"}
-            }
-            resp = requests.post(url, headers=headers, json=payload, timeout=15)
+            payload = {"model": "abab6.5s-chat", "messages": [{"role": "user", "content": prompt}], "response_format": {"type": "json_object"}}
+            resp = requests.post(url, headers=headers, json=payload, timeout=20)
             if resp.status_code == 200:
                 content = resp.json()['choices'][0]['message']['content'].replace('```json', '').replace('```', '').strip()
                 matches = json.loads(content).get('matches', [])
@@ -107,7 +119,7 @@ def match_jobs(linkedin_url, profile_data=None):
         except Exception as e:
             print(f"Minimax Exception: {e}")
 
-    return get_mock_matches(linkedin_url, "All AI engines failed or keys missing")
+    return get_mock_matches(linkedin_url, "AI Engines Unreachable")
 
 @app.route('/')
 def index():
@@ -116,7 +128,13 @@ def index():
 @app.route('/api/match', methods=['POST'])
 def get_match():
     data = request.json
-    matches = match_jobs(data.get('linkedin_url', ''), data.get('profile_data'))
+    linkedin_url = data.get('linkedin_url', '')
+    profile_data = data.get('profile_data')
+    profile_text = data.get('profile_text') # From textarea
+    
+    print(f"API Request: URL={linkedin_url}, TextLength={len(profile_text) if profile_text else 0}")
+    
+    matches = match_jobs(linkedin_url, profile_data, profile_text)
     return jsonify({"matches": matches})
 
 @app.route('/api/alert', methods=['POST'])

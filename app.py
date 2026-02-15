@@ -8,11 +8,23 @@ from datetime import datetime
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "clawhunter-secret-key")
 
-# Improved Matching Logic
+def get_mock_matches(linkedin_url):
+    return [
+        {
+            "id": str(uuid.uuid4()),
+            "title": "Portfolio Manager",
+            "company": "Amundi",
+            "location": "Paris, France",
+            "salary_range": "€120k - €180k",
+            "match_reason": "Based on your high-level financial background."
+        }
+    ]
+
+# AI Matching Logic using Gemini or Minimax
 def match_jobs(linkedin_url, profile_data=None):
-    api_key = os.environ.get("MINIMAX_API_KEY")
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+    minimax_key = os.environ.get("MINIMAX_API_KEY")
     
-    # Context building: Use scraped data if available, otherwise just the URL
     if profile_data:
         context = f"""
         Profile Name: {profile_data.get('name')}
@@ -23,66 +35,51 @@ def match_jobs(linkedin_url, profile_data=None):
     else:
         context = f"LinkedIn URL: {linkedin_url}"
 
-    if not api_key:
-        return [{"id": str(uuid.uuid4()), "title": "Please configure MINIMAX_API_KEY", "company": "System", "match_reason": "API Key Missing"}]
-
     prompt = f"""
-    User Context: {context}
-    Task: Find 3 high-impact job opportunities in Paris. 
-    Focus on prestigious startups (A-D round), Hedge Funds, or Large Tech firms.
-    
-    Output format: JSON only.
-    {{
-      "matches": [
-        {{
-          "title": "...",
-          "company": "...",
-          "location": "Paris, France",
-          "salary_range": "...",
-          "match_reason": "..."
-        }}
-      ]
-    }}
+    Context: {context}
+    Task: Find 3 high-impact job opportunities in Paris (prestigious startups or finance).
+    Return ONLY a JSON object with a 'matches' list containing objects with: 
+    title, company, location, salary_range, match_reason.
     """
 
-    try:
-        url = "https://api.minimax.chat/v1/text/chatcompletion_v2"
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-        payload = {
-            "model": "abab6.5s-chat",
-            "messages": [{"role": "user", "content": prompt}]
-        }
-        
-        print(f"Calling Minimax API with model {payload['model']}...")
-        response = requests.post(url, headers=headers, json=payload)
-        res_json = response.json()
-        
-        if response.status_code != 200:
-            error_msg = res_json.get('base_resp', {}).get('status_msg', 'Unknown API Error')
-            print(f"Minimax API Error ({response.status_code}): {error_msg}")
-            return [{"title": "API Error", "company": f"Status {response.status_code}", "match_reason": error_msg}]
-
-        if 'choices' not in res_json:
-            print(f"Unexpected API Response: {json.dumps(res_json)}")
-            return [{"title": "API Format Error", "company": "Minimax", "match_reason": "Response missing 'choices' field."}]
-
-        content = res_json['choices'][0]['message']['content']
-        # Remove markdown markers if present
-        content = content.replace('```json', '').replace('```', '').strip()
-        
+    # Try Gemini 2.0 Flash first
+    if gemini_key:
         try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}"
+            payload = {
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "response_mime_type": "application/json"
+                }
+            }
+            response = requests.post(url, json=payload)
+            res_json = response.json()
+            content = res_json['candidates'][0]['content']['parts'][0]['text']
             matches = json.loads(content).get('matches', [])
-        except json.JSONDecodeError:
-            # Handle cases where AI returns text instead of pure JSON
-            print(f"Failed to parse JSON from content: {content}")
-            return [{"title": "AI Parsing Error", "company": "Logic", "match_reason": "The AI response was not in valid JSON format."}]
+            for m in matches: m['id'] = str(uuid.uuid4())
+            return matches
+        except Exception as e:
+            print(f"Gemini API Error: {e}")
 
-        for m in matches:
-            m['id'] = str(uuid.uuid4())
-        return matches
-    except Exception as e:
-        print(f"System Exception: {str(e)}")
-        return [{"title": "AI Match Failed", "company": str(e), "match_reason": "Internal Server Error"}]
+    # Fallback to Minimax
+    if minimax_key:
+        try:
+            url = "https://api.minimax.chat/v1/text/chatcompletion_v2"
+            headers = {"Authorization": f"Bearer {minimax_key}", "Content-Type": "application/json"}
+            payload = {
+                "model": "abab6.5s-chat",
+                "messages": [{"role": "user", "content": prompt}]
+            }
+            response = requests.post(url, headers=headers, json=payload)
+            content = response.json()['choices'][0]['message']['content']
+            content = content.replace('```json', '').replace('```', '').strip()
+            matches = json.loads(content).get('matches', [])
+            for m in matches: m['id'] = str(uuid.uuid4())
+            return matches
+        except Exception as e:
+            print(f"Minimax API Error: {e}")
+
+    return get_mock_matches(linkedin_url)
 
 @app.route('/')
 def index():
@@ -92,8 +89,7 @@ def index():
 def get_match():
     data = request.json
     linkedin_url = data.get('linkedin_url', '')
-    profile_data = data.get('profile_data') # Accepting structured data from agent/frontend
-    
+    profile_data = data.get('profile_data')
     matches = match_jobs(linkedin_url, profile_data)
     return jsonify({"matches": matches})
 

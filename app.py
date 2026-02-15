@@ -46,6 +46,10 @@ def ai_rank_jobs(profile, live_jobs):
     except:
         return live_jobs
 
+@app.route('/health')
+def health():
+    return "OK", 200
+
 @app.route('/')
 def index():
     return render_template('index.html')

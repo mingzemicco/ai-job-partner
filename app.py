@@ -54,13 +54,26 @@ def match_jobs(linkedin_url, profile_data=None, profile_text=None):
     print(f"--- DEBUG: Context used for AI ---\n{context[:500]}...\n--- END DEBUG ---")
 
     prompt = f"""
-    Context: {context}
-    Task: This is a LinkedIn profile or resume. Identify 3 high-impact job opportunities in Paris.
-    If the person is in Real Estate/Investment, find roles in Real Estate funds or Proptech.
-    If the person is in Tech, find roles in Startups/Big Tech.
+    User Profile Data: {context}
     
-    Return ONLY a JSON object with a 'matches' list containing objects with: 
-    title, company, location, salary_range, match_reason.
+    Task: 
+    1. Deeply analyze the user's professional background, skills, and trajectory.
+    2. Identify 3 high-impact, aspirational next-step roles in the Paris ecosystem that represent a logical but ambitious career progression.
+    3. For each role, provide a highly specific 'match_reason' that explains the synergy between their past achievements and the new role's challenges.
+    4. Provide a realistic but high-end salary range based on current Paris tech/finance market standards for that level of seniority.
+    
+    Output format: JSON only.
+    {{
+      "matches": [
+        {{
+          "title": "...",
+          "company": "...",
+          "location": "Paris, France",
+          "salary_range": "...",
+          "match_reason": "..."
+        }}
+      ]
+    }}
     """
 
     # 1. Try OpenAI (GPT-4o)

@@ -8,86 +8,81 @@ from datetime import datetime
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "clawhunter-secret-key")
 
-def get_mock_matches(linkedin_url):
-    return [
+def get_mock_matches(linkedin_url, error_msg=None):
+    matches = [
         {
             "id": str(uuid.uuid4()),
-            "title": "Portfolio Manager",
+            "title": "Portfolio Manager (Demo)",
             "company": "Amundi",
             "location": "Paris, France",
             "salary_range": "€120k - €180k",
-            "match_reason": "Based on your high-level financial background."
+            "match_reason": "Your background in high-level finance aligns with Amundi's core strategies."
+        },
+        {
+            "id": str(uuid.uuid4()),
+            "title": "Senior AI Strategist (Demo)",
+            "company": "Mistral AI",
+            "location": "Paris, France",
+            "salary_range": "€100k - €150k",
+            "match_reason": "Excellent fit for frontier AI application teams."
         }
     ]
+    if error_msg:
+        # Prepend a notice about the API error
+        matches.insert(0, {
+            "id": "error",
+            "title": "Note: Using Demo Mode",
+            "company": "System",
+            "location": "N/A",
+            "salary_range": "N/A",
+            "match_reason": f"AI models are currently unavailable (Error: {error_msg}). Showing high-quality demo matches instead."
+        })
+    return matches
 
-# AI Matching Logic using Gemini or Minimax
 def match_jobs(linkedin_url, profile_data=None):
     gemini_key = os.environ.get("GEMINI_API_KEY")
     minimax_key = os.environ.get("MINIMAX_API_KEY")
     
+    context = f"LinkedIn URL: {linkedin_url}"
     if profile_data:
-        context = f"""
-        Profile Name: {profile_data.get('name')}
-        Headline: {profile_data.get('headline')}
-        Location: {profile_data.get('location')}
-        Top Experience: {json.dumps(profile_data.get('experience', [])[:3])}
-        """
-    else:
-        context = f"LinkedIn URL: {linkedin_url}"
+        context = f"Name: {profile_data.get('name')}\nHeadline: {profile_data.get('headline')}\nExp: {json.dumps(profile_data.get('experience', [])[:2])}"
 
-    prompt = f"""
-    Context: {context}
-    Task: Find 3 high-impact job opportunities in Paris (prestigious startups or finance).
-    Return ONLY a JSON object with a 'matches' list containing objects with: 
-    title, company, location, salary_range, match_reason.
-    """
+    prompt = f"Context: {context}\nTask: Find 3 high-impact jobs in Paris. Return ONLY a JSON object with a 'matches' list."
 
-    # Try Gemini 2.0 Flash first
+    # 1. Try Gemini 2.0 Flash
     if gemini_key:
         try:
-            # Use v1beta for latest 2.0 flash features
             url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}"
-            payload = {
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {
-                    "response_mime_type": "application/json"
-                }
-            }
-            response = requests.post(url, json=payload)
-            res_json = response.json()
-            
-            if response.status_code != 200:
-                print(f"Gemini API Error Response: {res_json}")
-                # Log error and fall through to fallback
-            elif 'candidates' not in res_json:
-                print(f"Gemini Response missing candidates: {res_json}")
-            else:
+            payload = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"response_mime_type": "application/json"}}
+            resp = requests.post(url, json=payload, timeout=10)
+            res_json = resp.json()
+            if resp.status_code == 200 and 'candidates' in res_json:
                 content = res_json['candidates'][0]['content']['parts'][0]['text']
                 matches = json.loads(content).get('matches', [])
                 for m in matches: m['id'] = str(uuid.uuid4())
                 return matches
+            print(f"Gemini Fail ({resp.status_code}): {res_json}")
         except Exception as e:
             print(f"Gemini Exception: {e}")
 
-    # Fallback to Minimax
+    # 2. Try Minimax Fallback
     if minimax_key:
         try:
             url = "https://api.minimax.chat/v1/text/chatcompletion_v2"
             headers = {"Authorization": f"Bearer {minimax_key}", "Content-Type": "application/json"}
-            payload = {
-                "model": "abab6.5s-chat",
-                "messages": [{"role": "user", "content": prompt}]
-            }
-            response = requests.post(url, headers=headers, json=payload)
-            content = response.json()['choices'][0]['message']['content']
-            content = content.replace('```json', '').replace('```', '').strip()
-            matches = json.loads(content).get('matches', [])
-            for m in matches: m['id'] = str(uuid.uuid4())
-            return matches
+            payload = {"model": "abab6.5s-chat", "messages": [{"role": "user", "content": prompt}]}
+            resp = requests.post(url, headers=headers, json=payload, timeout=10)
+            res_json = resp.json()
+            if resp.status_code == 200 and 'choices' in res_json:
+                content = res_json['choices'][0]['message']['content'].replace('```json', '').replace('```', '').strip()
+                matches = json.loads(content).get('matches', [])
+                for m in matches: m['id'] = str(uuid.uuid4())
+                return matches
+            print(f"Minimax Fail ({resp.status_code}): {res_json}")
         except Exception as e:
-            print(f"Minimax API Error: {e}")
+            print(f"Minimax Exception: {e}")
 
-    return get_mock_matches(linkedin_url)
+    return get_mock_matches(linkedin_url, "Quota exceeded or API error")
 
 @app.route('/')
 def index():
@@ -96,16 +91,12 @@ def index():
 @app.route('/api/match', methods=['POST'])
 def get_match():
     data = request.json
-    linkedin_url = data.get('linkedin_url', '')
-    profile_data = data.get('profile_data')
-    matches = match_jobs(linkedin_url, profile_data)
+    matches = match_jobs(data.get('linkedin_url', ''), data.get('profile_data'))
     return jsonify({"matches": matches})
 
 @app.route('/api/alert', methods=['POST'])
 def save_alert():
-    data = request.json
-    return jsonify({"status": "success", "message": f"Alert set for {data.get('email')}"})
+    return jsonify({"status": "success"})
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8080))
-    app.run(debug=False, host='0.0.0.0', port=port)
+    app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))

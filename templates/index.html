@@ -94,7 +94,13 @@
             matches.forEach(job => {
                 const card = document.createElement('div');
                 card.className = 'job-card';
-                card.innerHTML = `<h3>${job.title}</h3><div>${job.company}</div><div class="reason"><strong>Fit:</strong> ${job.match_reason}</div>`;
+                card.innerHTML = `
+                    <h3><a href="${job.url}" target="_blank" style="text-decoration:none; color:inherit;">${job.title}</a></h3>
+                    <div><strong>${job.company}</strong></div>
+                    <div class="reason" style="margin-top:10px;"><strong>Fit:</strong> ${job.match_reason}</div>
+                    <div style="margin-top:10px; font-weight:bold; color:#34A853;">Est. Salary: ${job.salary_range || 'Market Standard'}</div>
+                    <a href="${job.url}" target="_blank" class="btn" style="display:inline-block; margin-top:15px; background:var(--primary); color:white; line-height:36px; text-decoration:none;">View Job on LinkedIn</a>
+                `;
                 div.appendChild(card);
             });
         }

@@ -1,44 +1,49 @@
 /**
- * ClawHunter Local Agent Loop
- * Runs on your MacBook to bridge the gap between Cloud (Railway) and Local Browser.
+ * ClawHunter Agent Bridge v2 - Full Loop
  */
-const { scrapeLinkedInProfile } = require('./scraper.js');
+const { scrapeLinkedInProfile, searchLinkedInJobs } = require('./scraper.js');
 const axios = require('axios');
 
-const RAILWAY_URL = 'https://ai-job-partner-production.up.railway.app'; // Update if needed
-const POLL_INTERVAL = 5000; // 5 seconds
+const RAILWAY_URL = 'https://ai-job-partner-production.up.railway.app';
+const POLL_INTERVAL = 4000;
 
 async function agentLoop() {
-    console.log('🤖 ClawHunter Agent is listening for Magic Match requests...');
+    console.log('🤖 ClawHunter Agent v2 (Full Loop) is active...');
     
     while (true) {
         try {
-            // 1. Check for pending tasks from Railway
             const resp = await axios.get(`${RAILWAY_URL}/api/tasks/pending`);
             const tasks = resp.data;
-            const taskIds = Object.keys(tasks);
 
-            if (taskIds.length > 0) {
-                for (const taskId of taskIds) {
-                    const url = tasks[taskId];
-                    console.log(`🚀 New task received! Scraping: ${url}`);
+            for (const taskId in tasks) {
+                const url = tasks[taskId];
+                console.log(`🚀 Processing Magic Match for: ${url}`);
+                
+                try {
+                    // STEP 1: Scrape Profile
+                    const profile = await scrapeLinkedInProfile(url);
                     
-                    try {
-                        // 2. Perform the scrape using local relay
-                        const profileData = await scrapeLinkedInProfile(url);
-                        
-                        // 3. Post data back to Railway
-                        await axios.post(`${RAILWAY_URL}/api/tasks/complete/${taskId}`, profileData);
-                        console.log(`✅ Task ${taskId} completed and delivered.`);
-                    } catch (scrapeError) {
-                        console.error(`❌ Scraping failed for task ${taskId}:`, scrapeError.message);
-                    }
+                    // STEP 2: Logic - Determine search keywords from profile
+                    // (In v3, we can ask AI for these, but for speed we extract from headline)
+                    const keywords = profile.headline ? profile.headline.split('|')[0].trim() : "Product Manager";
+                    
+                    // STEP 3: Search Live Jobs
+                    const liveJobs = await searchLinkedInJobs(keywords);
+                    
+                    // STEP 4: Deliver everything back to Cloud
+                    await axios.post(`${RAILWAY_URL}/api/tasks/complete/${taskId}`, {
+                        profile: profile,
+                        live_jobs: liveJobs
+                    });
+                    
+                    console.log(`✅ Magic Match complete for ${taskId}`);
+                } catch (err) {
+                    console.error(`❌ Task ${taskId} failed:`, err.message);
                 }
             }
-        } catch (error) {
-            console.error('📡 Connection error to Railway:', error.message);
+        } catch (e) {
+            // Silence polling errors
         }
-
         await new Promise(r => setTimeout(r, POLL_INTERVAL));
     }
 }

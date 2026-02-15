@@ -3,82 +3,65 @@ const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 puppeteer.use(StealthPlugin());
 
 /**
- * Deep LinkedIn Scraper for ClawHunter
- * Uses the local OpenClaw Browser Relay
+ * Deep LinkedIn Scraper & Job Searcher
  */
 async function scrapeLinkedInProfile(url) {
-    console.log(`🕵️  Agent starting deep scrape for: ${url}`);
+    console.log(`🕵️  Scraping Profile: ${url}`);
+    const browser = await puppeteer.connect({ browserWSEndpoint: 'ws://127.0.0.1:18792/cdp' });
+    const page = await browser.newPage();
     
-    let browser;
     try {
-        browser = await puppeteer.connect({
-            browserWSEndpoint: 'ws://127.0.0.1:18792/cdp',
-        });
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await new Promise(r => setTimeout(r, 4000));
 
-        const pages = await browser.pages();
-        // Try to find if the tab is already open, otherwise open new
-        let page = pages.find(p => p.url().includes(url));
+        const data = await page.evaluate(() => ({
+            name: document.querySelector('h1')?.innerText,
+            headline: document.querySelector('.text-body-medium')?.innerText,
+            experience: Array.from(document.querySelectorAll('section')).find(s => s.innerText.includes('Experience'))
+                         ?.innerText.substring(0, 1000)
+        }));
         
-        if (!page) {
-            console.log('Opening new tab for profile...');
-            page = await browser.newPage();
-            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-            // Human-like wait for dynamic content
-            await new Promise(r => setTimeout(r, 5000));
-        }
-
-        console.log('Extracting structured experience...');
-        
-        const profileData = await page.evaluate(() => {
-            const getElText = (sel) => document.querySelector(sel)?.innerText?.trim();
-            
-            // Extract Experience Section
-            const experience = [];
-            const expSection = Array.from(document.querySelectorAll('section')).find(s => s.innerText.includes('Experience'));
-            
-            if (expSection) {
-                const items = expSection.querySelectorAll('li.artdeco-list__item');
-                items.forEach(li => {
-                    const title = li.querySelector('div.display-flex.align-items-center span[aria-hidden="true"]')?.innerText;
-                    const company = li.querySelector('span.t-14.t-normal span[aria-hidden="true"]')?.innerText;
-                    const description = li.querySelector('.inline-show-more-text')?.innerText;
-                    if (title && company) {
-                        experience.push({ title, company, description });
-                    }
-                });
-            }
-
-            return {
-                name: getElText('h1'),
-                headline: getElText('.text-body-medium'),
-                location: getElText('.text-body-small.inline.t-black--light'),
-                experience: experience,
-                skills: Array.from(document.querySelectorAll('.pvs-list__item-no-padding-with-list-item-margin span[aria-hidden="true"]'))
-                            .map(s => s.innerText).slice(0, 10)
-            };
-        });
-
+        await page.close();
         await browser.disconnect();
-        return profileData;
-
-    } catch (error) {
-        console.error('Scraping failed:', error.message);
-        if (browser) await browser.disconnect();
-        throw error;
+        return data;
+    } catch (e) {
+        await page.close();
+        await browser.disconnect();
+        throw e;
     }
 }
 
-// If run directly
-if (require.main === module) {
-    const targetUrl = process.argv[2];
-    if (!targetUrl) {
-        console.log('Usage: node scraper.js <linkedin_url>');
-        process.exit(1);
+async function searchLinkedInJobs(keywords, location = "Paris") {
+    console.log(`🔍 Searching Jobs for: ${keywords} in ${location}`);
+    const browser = await puppeteer.connect({ browserWSEndpoint: 'ws://127.0.0.1:18792/cdp' });
+    const page = await browser.newPage();
+    
+    try {
+        const searchUrl = `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(keywords)}&location=${encodeURIComponent(location)}&f_TPR=r86400`;
+        await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        await new Promise(r => setTimeout(r, 5000));
+
+        const jobs = await page.evaluate(() => {
+            const items = [];
+            const cards = document.querySelectorAll('.job-card-container, .jobs-search-results__list-item');
+            cards.forEach((card, i) => {
+                if (i > 4) return; // Limit to top 5 live results
+                const title = card.querySelector('h3, .job-card-list__title')?.innerText.trim();
+                const company = card.querySelector('.job-card-container__company-name, .job-card-container__primary-description')?.innerText.trim();
+                const link = card.querySelector('a')?.href;
+                if (title && company) items.push({ title, company, url: link });
+            });
+            return items;
+        });
+
+        await page.close();
+        await browser.disconnect();
+        return jobs;
+    } catch (e) {
+        await page.close();
+        await browser.disconnect();
+        throw e;
     }
-    scrapeLinkedInProfile(targetUrl).then(data => {
-        console.log('--- EXTRACTED DATA ---');
-        console.log(JSON.stringify(data, null, 2));
-    });
 }
 
-module.exports = { scrapeLinkedInProfile };
+module.exports = { scrapeLinkedInProfile, searchLinkedInJobs };

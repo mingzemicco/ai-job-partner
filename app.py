@@ -71,22 +71,20 @@ def get_mock_matches(linkedin_url):
         }
     ]
 
-# Real AI matching logic using Minimax m2.5
-def match_jobs(linkedin_url):
+# Enhanced AI matching logic with Profile Data
+def match_jobs(linkedin_url, profile_text=None):
     api_key = os.environ.get("MINIMAX_API_KEY")
     
-    # Check if we should use mock logic for these specific users to guarantee accuracy
-    url_lower = linkedin_url.lower()
-    if any(name in url_lower for name in ["qian-liu", "nimingze", "rui-li"]):
-        return get_mock_matches(linkedin_url)
-
+    # If we have real profile text, the matching will be 10x better
+    context = profile_text if profile_text else f"LinkedIn URL: {linkedin_url}"
+    
     if not api_key:
         return get_mock_matches(linkedin_url)
 
     prompt = f"""
-    User LinkedIn Profile URL: {linkedin_url}
-    Task: Identify 3 high-impact job opportunities in Paris (startups or finance) for this person.
-    Focus on prestigious firms (Mistral AI, Amundi, Stripe, etc.) or VC-backed scaleups.
+    Context: {context}
+    Task: This is a professional profile (from LinkedIn or raw text). Find 3 high-impact job opportunities in Paris.
+    Include match reasoning based on their specific experience and a realistic salary range.
     
     Output format: JSON only.
     {{
@@ -132,11 +130,13 @@ def index():
 @app.route('/api/match', methods=['POST'])
 def get_match():
     data = request.json
-    linkedin_url = data.get('linkedin_url')
-    if not linkedin_url:
-        return jsonify({"error": "LinkedIn URL required"}), 400
+    linkedin_url = data.get('linkedin_url', '')
+    profile_text = data.get('profile_text', '')
     
-    matches = match_jobs(linkedin_url)
+    if not linkedin_url and not profile_text:
+        return jsonify({"error": "Context required"}), 400
+    
+    matches = match_jobs(linkedin_url, profile_text)
     return jsonify({"matches": matches})
 
 @app.route('/api/alert', methods=['POST'])

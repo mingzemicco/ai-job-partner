@@ -100,7 +100,12 @@
         
         <div class="search-box">
             <svg focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"></path></svg>
-            <input type="text" id="linkedin-url" placeholder="Enter your LinkedIn profile URL (e.g., linkedin.com/in/name)">
+            <input type="text" id="linkedin-url" placeholder="Enter your LinkedIn profile URL">
+        </div>
+
+        <div style="margin-top: 20px;">
+            <p style="font-size: 12px; color: var(--gray); margin-bottom: 8px;">Or paste your experience/resume for deeper analysis:</p>
+            <textarea id="resume-text" style="width: 100%; max-width: 584px; height: 100px; padding: 10px; border-radius: 12px; border: 1px solid var(--border); outline: none; font-family: inherit;" placeholder="Paste your job experience here..."></textarea>
         </div>
 
         <div class="buttons">
@@ -127,7 +132,9 @@
     <script>
         async function performMatch() {
             const url = document.getElementById('linkedin-url').value;
-            if (!url) return alert("Please enter a LinkedIn URL");
+            const resumeText = document.getElementById('resume-text').value;
+            
+            if (!url && !resumeText) return alert("Please enter a LinkedIn URL or paste your resume");
 
             const resultsDiv = document.getElementById('results');
             resultsDiv.innerHTML = "<p>Analyzing your profile and scanning the market...</p>";
@@ -137,7 +144,10 @@
                 const response = await fetch('/api/match', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ linkedin_url: url })
+                    body: JSON.stringify({ 
+                        linkedin_url: url,
+                        profile_text: resumeText 
+                    })
                 });
                 const data = await response.json();
                 

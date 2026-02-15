@@ -14,7 +14,6 @@
             --light-gray: #f7fafc;
             --border: #e3e8ee;
             --success: #34A853;
-            --danger: #EA4335;
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -41,10 +40,9 @@
             width: 10px;
             height: 10px;
             border-radius: 50%;
-            background-color: #ccc;
+            background-color: var(--success);
+            box-shadow: 0 0 5px var(--success);
         }
-        .signal-light.online { background-color: var(--success); box-shadow: 0 0 5px var(--success); }
-        .signal-light.offline { background-color: var(--danger); box-shadow: 0 0 5px var(--danger); }
 
         .logo { font-family: 'Outfit', sans-serif; font-size: 64px; font-weight: 800; margin-bottom: 40px; }
         .logo span:nth-child(1) { color: #4285F4; }
@@ -120,8 +118,8 @@
 <body>
     <div class="container">
         <div class="status-bar">
-            <div id="status-light" class="signal-light"></div>
-            <span id="status-text">Relay Status: Checking...</span>
+            <div class="signal-light"></div>
+            <span>Agent Link: Enabled via OpenClaw Extension</span>
         </div>
 
         <div class="logo">
@@ -154,57 +152,32 @@
     </div>
 
     <script>
-        // Signal Light Logic
-        async function checkRelay() {
-            const light = document.getElementById('status-light');
-            const text = document.getElementById('status-text');
-            try {
-                // Testing accessibility of local port 18792
-                // We use image ping to avoid CORS issues
-                const img = new Image();
-                img.onload = () => { 
-                    light.className = 'signal-light online';
-                    text.innerText = 'Relay Status: Online (Ready to Scrape)';
-                };
-                img.onerror = () => { 
-                    light.className = 'signal-light offline';
-                    text.innerText = 'Relay Status: Offline (Please Connect Tab)';
-                };
-                img.src = "http://127.0.0.1:18792/favicon.ico?" + new Date().getTime();
-            } catch (e) {
-                light.className = 'signal-light offline';
-                text.innerText = 'Relay Status: Offline';
-            }
-        }
-        setInterval(checkRelay, 5000);
-        checkRelay();
-
         async function performMagicMatch() {
             const url = document.getElementById('linkedin-url').value;
             if (!url) return alert("Please enter a LinkedIn URL");
             
-            if (document.getElementById('status-light').classList.contains('offline')) {
-                return alert("Relay is Offline. Please open LinkedIn in Chrome and click 'Connect Tab' in the OpenClaw extension first.");
-            }
-
-            alert("✨ Magic Match activated! OpenClaw Agent is now starting the deep-scrape process on your local machine...");
-            performMatch(); 
+            alert("✨ Magic Match: My backend agent will now attempt to scrape the profile via your connected tab...");
+            performMatch(true); 
         }
 
-        async function performMatch() {
+        async function performMatch(isMagic = false) {
             const url = document.getElementById('linkedin-url').value;
             const resumeText = document.getElementById('resume-text').value;
             if (!url && !resumeText) return alert("Please provide context");
 
             const resultsDiv = document.getElementById('results');
-            resultsDiv.innerHTML = "<p>Analyzing market opportunities...</p>";
+            resultsDiv.innerHTML = isMagic ? "<p>🪄 Agent is deep-scraping and analyzing...</p>" : "<p>Analyzing market opportunities...</p>";
             resultsDiv.style.display = "block";
 
             try {
                 const response = await fetch('/api/match', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ linkedin_url: url, profile_text: resumeText })
+                    body: JSON.stringify({ 
+                        linkedin_url: url, 
+                        profile_text: resumeText,
+                        magic_mode: isMagic 
+                    })
                 });
                 const data = await response.json();
                 resultsDiv.innerHTML = "";
@@ -218,6 +191,16 @@
             } catch (err) {
                 resultsDiv.innerHTML = "<p>Error. Check your API Keys.</p>";
             }
+        }
+
+        async function setAlert() {
+            const email = document.getElementById('alert-email').value;
+            await fetch('/api/alert', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email })
+            });
+            alert("Success! We'll notify you of new matches.");
         }
     </script>
 </body>

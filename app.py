@@ -52,15 +52,37 @@ def match_jobs(linkedin_url, profile_data=None):
             "model": "abab6.5s-chat",
             "messages": [{"role": "user", "content": prompt}]
         }
+        
+        print(f"Calling Minimax API with model {payload['model']}...")
         response = requests.post(url, headers=headers, json=payload)
-        content = response.json()['choices'][0]['message']['content']
+        res_json = response.json()
+        
+        if response.status_code != 200:
+            error_msg = res_json.get('base_resp', {}).get('status_msg', 'Unknown API Error')
+            print(f"Minimax API Error ({response.status_code}): {error_msg}")
+            return [{"title": "API Error", "company": f"Status {response.status_code}", "match_reason": error_msg}]
+
+        if 'choices' not in res_json:
+            print(f"Unexpected API Response: {json.dumps(res_json)}")
+            return [{"title": "API Format Error", "company": "Minimax", "match_reason": "Response missing 'choices' field."}]
+
+        content = res_json['choices'][0]['message']['content']
+        # Remove markdown markers if present
         content = content.replace('```json', '').replace('```', '').strip()
-        matches = json.loads(content).get('matches', [])
+        
+        try:
+            matches = json.loads(content).get('matches', [])
+        except json.JSONDecodeError:
+            # Handle cases where AI returns text instead of pure JSON
+            print(f"Failed to parse JSON from content: {content}")
+            return [{"title": "AI Parsing Error", "company": "Logic", "match_reason": "The AI response was not in valid JSON format."}]
+
         for m in matches:
             m['id'] = str(uuid.uuid4())
         return matches
     except Exception as e:
-        return [{"title": "AI Match Failed", "company": str(e), "match_reason": "API Error"}]
+        print(f"System Exception: {str(e)}")
+        return [{"title": "AI Match Failed", "company": str(e), "match_reason": "Internal Server Error"}]
 
 @app.route('/')
 def index():

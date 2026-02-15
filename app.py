@@ -45,6 +45,7 @@ def match_jobs(linkedin_url, profile_data=None):
     # Try Gemini 2.0 Flash first
     if gemini_key:
         try:
+            # Use v1beta for latest 2.0 flash features
             url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}"
             payload = {
                 "contents": [{"parts": [{"text": prompt}]}],
@@ -54,12 +55,19 @@ def match_jobs(linkedin_url, profile_data=None):
             }
             response = requests.post(url, json=payload)
             res_json = response.json()
-            content = res_json['candidates'][0]['content']['parts'][0]['text']
-            matches = json.loads(content).get('matches', [])
-            for m in matches: m['id'] = str(uuid.uuid4())
-            return matches
+            
+            if response.status_code != 200:
+                print(f"Gemini API Error Response: {res_json}")
+                # Log error and fall through to fallback
+            elif 'candidates' not in res_json:
+                print(f"Gemini Response missing candidates: {res_json}")
+            else:
+                content = res_json['candidates'][0]['content']['parts'][0]['text']
+                matches = json.loads(content).get('matches', [])
+                for m in matches: m['id'] = str(uuid.uuid4())
+                return matches
         except Exception as e:
-            print(f"Gemini API Error: {e}")
+            print(f"Gemini Exception: {e}")
 
     # Fallback to Minimax
     if minimax_key:
